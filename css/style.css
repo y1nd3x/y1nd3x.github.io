@@ -1,0 +1,394 @@
+/* --- Variables & Theme System --- */
+:root {
+    --bg-body: #fafafa;
+    --bg-container: #ffffff;
+    --text-main: #333;
+    --text-bold: #111;
+    --text-muted: #666;
+    --text-light: #888;
+    --border-color: #f0f0f0;
+    --code-bg: #f5f5f5;
+    --pre-bg: #feffff;
+    --transition: 0.2s ease;
+    --bg-image: linear-gradient(to top, #dfe9f3 0%, white 100%);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-body: #121212;
+        --bg-container: #1d2228;
+        --text-main: #ccc;
+        --text-bold: #e4e4e4;
+        --text-muted: #999;
+        --text-light: #666;
+        --border-color: #333;
+        --code-bg: #2d2d2d;
+        --pre-bg: #15191e;
+        --bg-image: linear-gradient(60deg, #29323c 0%, #485563 100%);
+    }
+}
+
+
+/* --- Reset & Base --- */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+/* ---  font-family: "Noto Sans", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif;  --- */
+	font-family: "Open Sans", "Ubuntu", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif;
+    line-height: 1.6;
+    color: var(--text-main);
+    background-image: var(--bg-image);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+    color: var(--text-bold);
+    text-decoration: none;
+    transition: color var(--transition);
+}
+
+a:hover {
+    color: var(--text-muted);
+}
+
+/* --- Layout --- */
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 50px 60px;
+    background: var(--bg-container);
+    box-shadow: 0 0 40px rgba(0,0,0,0.1);
+    min-height: 100vh;
+}
+
+navbar {
+    margin-bottom: 60px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+main {
+    min-height: calc(100vh - 250px);
+}
+
+/* --- Navigation --- */
+.site-title {
+    font-size: 2rem;
+    font-weight: 600;
+}
+
+.site-nav a, .back-link, .post-nav a {
+    font-size: 0.9rem;
+}
+
+.site-nav a {
+    margin-left: 20px;
+}
+
+.site-nav a:hover, .back-link:hover, .post-nav a:hover {
+    color: var(--text-bold);
+}
+
+/* --- Post Content & Typography --- */
+.page-title, .post-title {
+    font-weight: 700;
+    color: var(--text-bold);
+}
+
+.page-title {
+    font-size: 1.7rem;
+    margin-bottom: 30px;
+    padding-bottom: 15px;
+}
+
+.post-title {
+    font-size: 1.8rem;
+    margin-bottom: 10px;
+}
+
+.post-list, .tag-list, .search-result-list {
+    list-style: none;
+    padding: 0;
+}
+
+.post-item {
+    padding: 12px 0;
+    display: flex;
+    align-items: baseline;
+    font-weight: 700;
+}
+
+.post-item::before {
+    content: "⎡";
+    margin-right: 12px;
+    color: var(--text-main);
+    font-weight: bold;
+	
+	/* === Fix slight downward misalignment === */
+    display: inline-block; /* Required for vertical alignment or relative positioning to take effect */
+    position: relative;
+    top: -2px; /* Negative value shifts the element upwards */
+}
+
+.post-item:last-child, .tag-item:last-child, .search-result-item:last-child {
+    border-bottom: none;
+}
+
+.post-link {
+    font-size: 1.05rem;
+}
+
+.post-meta {
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+}
+
+.post-date {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    font-family: "SF Mono", monospace;
+}
+
+.post-content {
+    line-height: 2;
+    font-size: 1rem;
+}
+
+.post-content p, .post-content ul, .post-content ol, .post-content pre, .post-content table {
+    margin-bottom: 1.5em;
+}
+
+.post-content h2, .post-content h3 {
+    margin: 2em 0 0.8em;
+    font-weight: 600;
+    color: var(--text-bold);
+}
+
+.post-content ul, .post-content ol {
+    padding-left: 1rem !important;
+}
+
+/* --- Code & Highlight.js Synchronization --- */
+/* Inline Code */
+.post-content code {
+    background: var(--code-bg);
+    color: var(--text-bold);
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    font-size: 0.9em;
+    font-family: "SF Mono", monospace;
+}
+
+/* Block Code Area */
+.post-content pre {
+    background: var(--pre-bg) !important;
+    padding: 1.2em;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid var(--border-color);
+}
+
+.post-content pre code, .hljs {
+    background: transparent !important;
+    padding: 0;
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+/* --- Blockquote --- */
+.post-content blockquote {
+    border-left: 3px solid var(--border-color);
+    padding: 0.5em 1em;
+    color: var(--text-bold);
+    margin: 1.5em 0;
+    background: var(--bg-body);
+    border-radius: 0 4px 4px 0;
+}
+
+/* --- Tables & Media --- */
+.post-content table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+}
+
+.post-content th, .post-content td {
+    border: 1px solid var(--border-color);
+    padding: 10px 12px;
+    text-align: left;
+}
+
+.post-content th {
+    background: var(--pre-bg);
+    font-weight: 600;
+}
+
+.post-content tr:nth-child(even) {
+    background: var(--bg-body);
+}
+
+.post-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    margin: 1em 0;
+    display: block;
+}
+
+/* --- iframe --- */
+.post-content iframe {
+    position: relative !important;
+    display: block !important;
+    
+    /* Force full width */
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 100% !important;
+    
+    /* Enforce layout dimensions */
+    height: 720px !important;
+    min-height: 720px !important;
+    box-sizing: border-box;
+    
+    /* Margins and border reset */
+    margin: 25px auto !important;
+    border: none !important;
+    outline: none !important;
+    background: #ffffff !important;
+    
+    /* Border radius and box shadow */
+    border-radius: 6px !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2) !important;
+    clip-path: inset(0 0 0 0 round 6px) !important;
+}
+
+.post-content p:has(iframe) {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+/* --- Search --- */
+.search-box {
+    margin-bottom: 30px;
+}
+
+.search-box input {
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 1rem;
+    background: var(--bg-container);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    transition: border-color var(--transition);
+    outline: none;
+}
+
+.search-box input:focus {
+    border-color: var(--text-light);
+}
+
+.search-result-item {
+    padding: 15px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.search-result-link {
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.search-result-excerpt {
+    margin-top: 8px;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.search-empty {
+    color: var(--text-light);
+    text-align: center;
+    padding: 40px 0;
+}
+
+/* --- Pagination & Footer --- */
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    padding: 15px 0;
+    margin-top: auto;
+}
+
+.page-btn {
+    padding: 8px 14px;
+    border: 0px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-container);
+    color: var(--text-main);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.page-btn:hover:not(:disabled) {
+    background: var(--code-bg);
+}
+
+.page-btn:disabled {
+    color: var(--text-light);
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+footer {
+    text-align: center;
+    font-size: 0.85rem;
+    color: #aaa;
+    padding-top: 15px;
+}
+
+/* --- Responsive & Media Filters --- */
+@media (max-width: 600px) {
+    .container {
+        padding: 30px 25px;
+    }
+
+    navbar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+    }
+
+    .site-nav {
+        display: flex;
+        gap: 15px;
+    }
+
+    .site-nav a {
+        margin-left: 0;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    img {
+        filter: brightness(.8) contrast(1.1);
+    }
+
+    .container {
+        box-shadow: 0 0 40px rgba(0,0,0,0.5);
+    }
+}

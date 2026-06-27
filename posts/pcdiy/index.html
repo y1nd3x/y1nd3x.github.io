@@ -1,0 +1,101 @@
+<!doctype html><html lang=en><head><meta charset=UTF-8><meta name=viewport content="width=device-width,initial-scale=1"><title>PC DIY - ⎡nd3x</title><link rel=icon href=data:,><link rel=preconnect href=https://lf3-cdn-tos.bytecdntp.com crossorigin><link rel=stylesheet href=https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/open-fonts/open-sans/open-sans.css><link rel=stylesheet href=https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/open-fonts/ubuntu/ubuntu.css><link rel=stylesheet href=../../css/style.css></head><body><div class=container><main><h1 class=page-title><a href=../../>PC DIY</a></h1><article class=post><div class=post-meta><time class=post-date datetime=2025-02-23>2025-02-23</time></div><div class=post-content><p><a href=https://massgrave.dev/windows_ltsc_links.html>https://massgrave.dev/windows_ltsc_links.html</a></p><p>Restore.bat</p><div class=highlight><pre tabindex=0 style=color:#fff;background-color:#1f1f24;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-bat data-lang=bat><span style=display:flex><span>@<span style=color:#fc5fa3>echo</span> off
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>robocopy <span style=color:#fc6a5d>&#34;.ssh&#34;</span> <span style=color:#fc6a5d>&#34;</span><span style=color:#41a1c0>%USERPROFILE%</span><span style=color:#fc6a5d>\.ssh&#34;</span> /MIR /DCOPY:DAT /IT /MT /R:2 /W:2
+</span></span><span style=display:flex><span>robocopy .\ <span style=color:#fc6a5d>&#34;</span><span style=color:#41a1c0>%USERPROFILE%</span><span style=color:#fc6a5d>&#34;</span> <span style=color:#fc6a5d>&#34;.gitconfig&#34;</span> /DCOPY:DAT /IT /MT /R:2 /W:2
+</span></span><span style=display:flex><span>robocopy <span style=color:#fc6a5d>&#34;Desktop&#34;</span> <span style=color:#fc6a5d>&#34;</span><span style=color:#41a1c0>%USERPROFILE%</span><span style=color:#fc6a5d>\Desktop&#34;</span> /MIR /DCOPY:DAT /IT /MT /r:2 /w:2
+</span></span><span style=display:flex><span>robocopy <span style=color:#fc6a5d>&#34;Shortcuts&#34;</span> <span style=color:#fc6a5d>&#34;</span><span style=color:#41a1c0>%AppData%</span><span style=color:#fc6a5d>\Microsoft\Windows\Start Menu\Programs&#34;</span> /DCOPY:DAT /IT /MT /R:2 /W:2
+</span></span><span style=display:flex><span>:<span style=color:#6c7986>:robocopy &#34;Shortcuts&#34; &#34;%ProgramData%\Microsoft\Windows\Start Menu\Programs&#34; &#34;*.lnk&#34; /DCOPY:DAT /IT /MT /R:2 /W:2</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>:<span style=color:#6c7986>:backup pintaskbar</span>
+</span></span><span style=display:flex><span>:<span style=color:#6c7986>:robocopy &#34;%AppData%\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar&#34; &#34;PinTaskbar&#34; /DCOPY:DAT /IT /MT /R:2 /W:2</span>
+</span></span><span style=display:flex><span>:<span style=color:#6c7986>:reg export HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband C:\pintaskbar.reg</span>
+</span></span><span style=display:flex><span>robocopy <span style=color:#fc6a5d>&#34;PinTaskbar&#34;</span> <span style=color:#fc6a5d>&#34;</span><span style=color:#41a1c0>%AppData%</span><span style=color:#fc6a5d>\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar&#34;</span> /DCOPY:DAT /IT /MT /R:2 /W:2
+</span></span><span style=display:flex><span>reg import pintaskbar.reg
+</span></span><span style=display:flex><span>:<span style=color:#6c7986>:Log off and log back in and the icons should be pinned to your taskbar.</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>taskkill /f /im explorer.exe
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>start</span> explorer.exe
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>pause</span>
+</span></span></code></pre></div><p>CleanTemp.bat</p><div class=highlight><pre tabindex=0 style=color:#fff;background-color:#1f1f24;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-bat data-lang=bat><span style=display:flex><span>&lt;# : Begin batch (batch script is in commentary of powershell v2.0+)
+</span></span><span style=display:flex><span>@<span style=color:#fc5fa3>echo</span> off
+</span></span><span style=display:flex><span>: Use<span style=color:#6c7986> local variables</span>
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>setlocal</span>
+</span></span><span style=display:flex><span>: Change<span style=color:#6c7986> current directory to script location - useful for including .ps1 files</span>
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>cd</span> <span style=color:#41a1c0>%~dp0</span>
+</span></span><span style=display:flex><span>: Invoke<span style=color:#6c7986> this file as powershell expression</span>
+</span></span><span style=display:flex><span>powershell -executionpolicy remotesigned -Command <span style=color:#fc6a5d>&#34;Invoke-Expression $([System.IO.File]::ReadAllText(&#39;</span><span style=color:#41a1c0>%~f0</span><span style=color:#fc6a5d>&#39;))&#34;</span>
+</span></span><span style=display:flex><span>: Restore<span style=color:#6c7986> environment variables present before setlocal and restore current directory</span>
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>endlocal</span>
+</span></span><span style=display:flex><span>: End<span style=color:#6c7986> batch - go to end of file</span>
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>goto</span>:eof
+</span></span><span style=display:flex><span>#&gt;
+</span></span><span style=display:flex><span># here start your powershell script
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span># example: include another .ps1 scripts (commented, for quick copy-paste and test run)
+</span></span><span style=display:flex><span>#. <span style=color:#fc6a5d>&#34;.\anotherScript.ps1&#34;</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span># example: standard input from console
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>$objShell = New-Object -ComObject Shell.Application
+</span></span><span style=display:flex><span>$objFolder = $objShell.Namespace(0xA)
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span># 1. Empty Recycle Bin
+</span></span><span style=display:flex><span>    Write-Host <span style=color:#fc6a5d>&#34;Emptying Recycle Bin&#34;</span> -ForegroundColor Yellow
+</span></span><span style=display:flex><span>    $objFolder.items() | %{ Remove-Item $_.path -Recurse -Force -Confirm:$false}
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span># 2. Remove Temp
+</span></span><span style=display:flex><span>    Write-Host <span style=color:#fc6a5d>&#34;Removing Temp&#34;</span> -ForegroundColor Yellow
+</span></span><span style=display:flex><span>    Set-Location <span style=color:#fc6a5d>&#34;C:\Windows\Temp&#34;</span>
+</span></span><span style=display:flex><span>    Remove-Item * -Recurse -Force -ErrorAction SilentlyContinue
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    Set-Location <span style=color:#fc6a5d>&#34;C:\Windows\Prefetch&#34;</span>
+</span></span><span style=display:flex><span>    Remove-Item * -Recurse -Force -ErrorAction SilentlyContinue
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    Set-Location <span style=color:#fc6a5d>&#34;C:\Windows\SoftwareDistribution&#34;</span>
+</span></span><span style=display:flex><span>    Remove-Item * -Recurse -Force -ErrorAction SilentlyContinue
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    Set-Location <span style=color:#fc6a5d>&#34;C:\Documents and Settings&#34;</span>
+</span></span><span style=display:flex><span>    Remove-Item <span style=color:#fc6a5d>&#34;.\*\Local Settings\temp\*&#34;</span> -Recurse -Force -ErrorAction SilentlyContinue
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    Set-Location <span style=color:#fc6a5d>&#34;C:\Users&#34;</span>
+</span></span><span style=display:flex><span>    Remove-Item <span style=color:#fc6a5d>&#34;.\*\Appdata\Local\Temp\*&#34;</span> -Recurse -Force -ErrorAction SilentlyContinue
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span># 3. Remove History
+</span></span><span style=display:flex><span>    Write-Host <span style=color:#fc6a5d>&#34;Removing History&#34;</span> -ForegroundColor Yellow
+</span></span><span style=display:flex><span>    Remove-Item -Path <span style=color:#fc6a5d>&#34;$env:APPDATA\Microsoft\Windows\Recent\*.lnk&#34;</span> -Recurse -Force
+</span></span><span style=display:flex><span>    Remove-Item -Path <span style=color:#fc6a5d>&#34;$env:APPDATA\Microsoft\Windows\Recent\AutomaticDestinations\*&#34;</span> -Recurse -Force
+</span></span><span style=display:flex><span>    Remove-Item -Path <span style=color:#fc6a5d>&#34;$env:APPDATA\Microsoft\Windows\Recent\CustomDestinations\*&#34;</span> -Recurse -Force
+</span></span><span style=display:flex><span>    REG Delete HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\RunMRU /VA /F
+</span></span><span style=display:flex><span>    REG Delete HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\TypedPaths /VA /F
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span># 4. Running Cleanmgr
+</span></span><span style=display:flex><span>    Write-Host <span style=color:#fc6a5d>&#34;Running Cleanmgr...&#34;</span> -ForegroundColor Yellow
+</span></span><span style=display:flex><span>#    cleanmgr /D $Env:SystemDrive /lowdisk | out-Null
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>#    $([char]7)
+</span></span><span style=display:flex><span>#    sleep 1
+</span></span><span style=display:flex><span>#    Write-Host <span style=color:#fc6a5d>&#34;It&#39;s done.&#34;</span> -ForegroundColor Yellow
+</span></span><span style=display:flex><span>#    sleep 2
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    Get-ItemProperty -Path &#39;HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\*&#39; | % { New-ItemProperty -Path $_.PSPath -Name StateFlags0001 -Value 2 -PropertyType DWord -Force };
+</span></span><span style=display:flex><span>    Remove-ItemProperty -Path &#39;HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\DownloadsFolder&#39; -Name <span style=color:#fc6a5d>&#34;StateFlags0001&#34;</span> -Force
+</span></span><span style=display:flex><span>    Start-Process -FilePath CleanMgr.exe -ArgumentList <span style=color:#fc6a5d>&#34;/sagerun:1 /D $env:SystemDrive&#34;</span> 
+</span></span></code></pre></div><p><a href=https://stackoverflow.com/questions/6037146/how-to-execute-powershell-commands-from-a-batch-file/41986771#41986771>https://stackoverflow.com/questions/6037146/how-to-execute-powershell-commands-from-a-batch-file/41986771#41986771</a></p><p>backup and import drivers.bat</p><div class=highlight><pre tabindex=0 style=color:#fff;background-color:#1f1f24;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-powershell data-lang=powershell><span style=display:flex><span>dism /online /<span style=color:#d0a8ff>Export-Driver</span> /Destination<span style=color:#960050>:</span>D:\driverbackup
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>pnputil /<span style=color:#d0a8ff>add-driver</span> D:\driverbackup\*.inf /subdirs /install
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>:: dism /offline /<span style=color:#d0a8ff>Add-Driver</span> /Driver<span style=color:#960050>:</span>D:\driverbackup /Recurse
+</span></span></code></pre></div><p>installdrivers.bat</p><div class=highlight><pre tabindex=0 style=color:#fff;background-color:#1f1f24;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-bat data-lang=bat><span style=display:flex><span>@<span style=color:#fc5fa3>echo</span> off
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>CD</span> /d <span style=color:#41a1c0>%~dp0</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>pnputil /add-driver .\*.inf /subdirs /install
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>exit</span>
+</span></span></code></pre></div><p>install-IME-win11.bat</p><div class=highlight><pre tabindex=0 style=color:#fff;background-color:#1f1f24;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-bat data-lang=bat><span style=display:flex><span>@<span style=color:#fc5fa3>echo</span> off
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>dism /online /add-package /packagepath:Microsoft-Windows-LanguageFeatures-Basic-zh-cn-Package~31bf3856ad364e35~amd64~~.cab
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>pause</span>.
+</span></span></code></pre></div><p>bookmarks</p><p><code>curl checkip.amazonaws.com</code></p><p><code>curl ipinfo.io</code></p><p><a href=https://librespeed.org/>https://librespeed.org/</a></p><p><a href=https://test.nju.edu.cn/>https://test.nju.edu.cn/</a></p><p><a href=https://www.testufo.com/>https://www.testufo.com/</a></p><p><a href=https://cps-check.com/cn/test-keyboard>https://cps-check.com/cn/test-keyboard</a></p><h2 id=unlock-tdp-or-power-limit-on-motherboard>Unlock TDP or Power Limit on Motherboard</h2><h3 id=asus>asus</h3><p>Ai Tweaker -> Internal CPU Power Management</p><p><img src=pl.png alt=pl></p><p>Ai Tweaker -> Actual VRM Core Voltage</p><p>Ai Tweaker -> Global Core SVID Voltage</p><p>Ai Tweaker -> Cache SVID Voltage</p><p><img src=v.png alt=v></p><p>Ai Tweaker -> Tweaker’s Paradise</p><p><img src=mc.png alt=mc></p><h2 id=how-to-turn-on-your-computer-automatically-by-setting-bios-asus>How to turn on your computer automatically by setting BIOS (asus)</h2><p><a href=https://www.asus.com/support/faq/1043640/>https://www.asus.com/support/faq/1043640/</a></p><ol><li>After you turn on the power of computer, press the <code>Delete</code> or <code>F2</code> key on the keyboard immediately to enter BIOS EZ Mode, Then press <code>F7</code> to enter Advanced Mode as below</li></ol><p><img src=adv.png alt=img></p><ol start=2><li>Click <strong>Advanced</strong> - <strong>APM Configuration</strong>, as below</li></ol><p><img src=20230818175419080_3.png alt=img></p><ol start=3><li>Make sure <strong>Erp ready</strong> is <strong>Disabled</strong> as below (ErP is Products&rsquo; energy efficiency requirements of Energy-related Products in Europe)</li></ol><p><img src=20230818175733588_4.png alt=img></p><ol start=4><li>Change <strong>Power on By RTC</strong> to <strong>Enabled</strong> as below</li></ol><p><img src=20230818175926348_5.png alt=img></p><ol start=5><li>Set Day and Time that you want to wake up the device. If you want motherboard to be powered on at 08:30 everyday, please set as below (<strong>Wake up date: 0</strong> stands for every day, <strong>1</strong> stands for 1st day of the month, <strong>2</strong> stands for 2nd day of the month&mldr;<strong>31</strong> is the 31st of the month)</li></ol><p><img src=20230818180045887_6.png alt=img></p><ol start=6><li>Press <code>F10</code>, and it will show the time that you set. Please confirm if it is the same as what you want. If it&rsquo;s correct, please click <strong>OK</strong> to save changes and reset at once.</li></ol><p><img src=20230818180155580_7.png alt=img></p><ol start=7><li>Disable <strong>Turn on fast startup</strong>, then click <strong>Save changes</strong>. Finish the above steps, you can make your motherboard power on automatically by BIOS RTC</li></ol><p><img src=20230818180740429_12.png alt=img></p></div></article></main><footer><p>&copy; 2026 <a href=../../ class=back-link>⎡nd3x</a></p></footer></div></body></html>

@@ -1,0 +1,109 @@
+<!doctype html><html lang=en><head><meta charset=UTF-8><meta name=viewport content="width=device-width,initial-scale=1"><title>基于 FlexSearch 的 Hugo 集成案例 - ⎡nd3x</title><link rel=icon href=data:,><link rel=preconnect href=https://lf3-cdn-tos.bytecdntp.com crossorigin><link rel=stylesheet href=https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/open-fonts/open-sans/open-sans.css><link rel=stylesheet href=https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/open-fonts/ubuntu/ubuntu.css><link rel=stylesheet href=../../css/style.css></head><body><div class=container><main><h1 class=page-title><a href=../../>基于 FlexSearch 的 Hugo 集成案例</a></h1><article class=post><div class=post-meta><time class=post-date datetime=2026-05-02>2026-05-02</time></div><div class=post-content><h3 id=1-配置-hugo-生成搜索索引-json>1. 配置 Hugo 生成搜索索引 (JSON)</h3><p>首先，你需要让 Hugo 在构建时输出一个 <code>index.json</code> 文件。</p><p>修改你的 <code>hugo.yaml</code> (或 <code>config.toml</code>)：</p><p>YAML</p><div class=highlight><pre tabindex=0 style=color:#fff;background-color:#1f1f24;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-yaml data-lang=yaml><span style=display:flex><span>outputs:
+</span></span><span style=display:flex><span>  home:
+</span></span><span style=display:flex><span>    - HTML
+</span></span><span style=display:flex><span>    - JSON <span style=color:#6c7986># 开启首页的 JSON 输出</span>
+</span></span></code></pre></div><p>然后创建模板文件 <code>layouts/_default/index.json</code>：</p><p><em>注意：这里只索引标题、标签和摘要，以平衡搜索准确度和文件体积。</em></p><p>JSON</p><div class=highlight><pre tabindex=0 style=color:#fff;background-color:#1f1f24;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-go-template data-lang=go-template><span style=display:flex><span>[
+</span></span><span style=display:flex><span>  <span style=color:#fd8f3f>{{-</span> <span style=color:#fc5fa3>range</span> $index, $page := .Site.RegularPages <span style=color:#fd8f3f>-}}</span>
+</span></span><span style=display:flex><span>  <span style=color:#fd8f3f>{{-</span> <span style=color:#fc5fa3>if</span> $index <span style=color:#fd8f3f>-}}</span>,<span style=color:#fd8f3f>{{-</span> <span style=color:#fc5fa3>end</span> <span style=color:#fd8f3f>-}}</span>
+</span></span><span style=display:flex><span>  {
+</span></span><span style=display:flex><span>    &#34;title&#34;: <span style=color:#fd8f3f>{{</span> $page.Title | jsonify <span style=color:#fd8f3f>}}</span>,
+</span></span><span style=display:flex><span>    &#34;permalink&#34;: <span style=color:#fd8f3f>{{</span> $page.Permalink | jsonify <span style=color:#fd8f3f>}}</span>,
+</span></span><span style=display:flex><span>    &#34;tags&#34;: <span style=color:#fd8f3f>{{</span> $page.Params.tags | jsonify <span style=color:#fd8f3f>}}</span>,
+</span></span><span style=display:flex><span>    &#34;content&#34;: <span style=color:#fd8f3f>{{</span> $page.Plain | jsonify <span style=color:#fd8f3f>}}</span>
+</span></span><span style=display:flex><span>  }
+</span></span><span style=display:flex><span>  <span style=color:#fd8f3f>{{-</span> <span style=color:#fc5fa3>end</span> <span style=color:#fd8f3f>-}}</span>
+</span></span><span style=display:flex><span>]
+</span></span></code></pre></div><h3 id=2-创建搜索页面模板>2. 创建搜索页面模板</h3><p>创建 <code>layouts/_default/search.html</code>。这里我们引入 FlexSearch 并编写中文优化的逻辑。</p><p>HTML</p><div class=highlight><pre tabindex=0 style=color:#fff;background-color:#1f1f24;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-html data-lang=html><span style=display:flex><span>{{ define &#34;main&#34; }}
+</span></span><span style=display:flex><span>&lt;div class=<span style=color:#fc6a5d>&#34;search-wrap&#34;</span>&gt;
+</span></span><span style=display:flex><span>    &lt;input type=<span style=color:#fc6a5d>&#34;text&#34;</span> id=<span style=color:#fc6a5d>&#34;search-input&#34;</span> placeholder=<span style=color:#fc6a5d>&#34;输入关键词，支持中文精确搜索...&#34;</span> /&gt;
+</span></span><span style=display:flex><span>    &lt;div id=<span style=color:#fc6a5d>&#34;search-results&#34;</span>&gt;&lt;/div&gt;
+</span></span><span style=display:flex><span>&lt;/div&gt;
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span><span style=color:#6c7986>&lt;!-- 引入 FlexSearch --&gt;</span>
+</span></span><span style=display:flex><span>&lt;script src=<span style=color:#fc6a5d>&#34;https://cdn.jsdelivr.net/gh/nextapps-be/flexsearch@0.7.31/dist/flexsearch.bundle.js&#34;</span>&gt;&lt;/script&gt;
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>&lt;script&gt;
+</span></span><span style=display:flex><span>    <span style=color:#6c7986>// 1. 初始化 FlexSearch 索引 (中文优化配置)
+</span></span></span><span style=display:flex><span>    <span style=color:#fc5fa3>const</span> index = <span style=color:#fc5fa3>new</span> FlexSearch.Document({
+</span></span><span style=display:flex><span>        tokenize: <span style=color:#fc6a5d>&#34;forward&#34;</span>, <span style=color:#6c7986>// 针对中文建议使用 forward 或自定义
+</span></span></span><span style=display:flex><span>        cache: <span style=color:#fc5fa3>true</span>,
+</span></span><span style=display:flex><span>        <span style=color:#d0a8ff>document</span>: {
+</span></span><span style=display:flex><span>            id: <span style=color:#fc6a5d>&#34;id&#34;</span>,
+</span></span><span style=display:flex><span>            index: [<span style=color:#fc6a5d>&#34;title&#34;</span>, <span style=color:#fc6a5d>&#34;content&#34;</span>, <span style=color:#fc6a5d>&#34;tags&#34;</span>], <span style=color:#6c7986>// 索引这些字段
+</span></span></span><span style=display:flex><span>            store: [<span style=color:#fc6a5d>&#34;title&#34;</span>, <span style=color:#fc6a5d>&#34;permalink&#34;</span>] <span style=color:#6c7986>// 结果中直接返回这些字段
+</span></span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    });
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>const</span> searchInput = <span style=color:#d0a8ff>document</span>.getElementById(<span style=color:#fc6a5d>&#39;search-input&#39;</span>);
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>const</span> resultsContainer = <span style=color:#d0a8ff>document</span>.getElementById(<span style=color:#fc6a5d>&#39;search-results&#39;</span>);
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#6c7986>// 2. 加载 Hugo 生成的 JSON 并建立索引
+</span></span></span><span style=display:flex><span>    fetch(<span style=color:#fc6a5d>&#39;/index.json&#39;</span>)
+</span></span><span style=display:flex><span>        .then(response =&gt; response.json())
+</span></span><span style=display:flex><span>        .then(data =&gt; {
+</span></span><span style=display:flex><span>            data.forEach((doc, i) =&gt; {
+</span></span><span style=display:flex><span>                index.add({
+</span></span><span style=display:flex><span>                    id: i,
+</span></span><span style=display:flex><span>                    title: doc.title,
+</span></span><span style=display:flex><span>                    content: doc.content,
+</span></span><span style=display:flex><span>                    tags: doc.tags ? doc.tags.join(<span style=color:#fc6a5d>&#39; &#39;</span>) : <span style=color:#fc6a5d>&#39;&#39;</span>
+</span></span><span style=display:flex><span>                });
+</span></span><span style=display:flex><span>                <span style=color:#6c7986>// 将原始数据存入内存以便渲染结果
+</span></span></span><span style=display:flex><span>                <span style=color:#d0a8ff>window</span>.searchData = data;
+</span></span><span style=display:flex><span>            });
+</span></span><span style=display:flex><span>            console.log(<span style=color:#fc6a5d>&#34;搜索索引已就绪&#34;</span>);
+</span></span><span style=display:flex><span>        });
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#6c7986>// 3. 监听输入进行搜索
+</span></span></span><span style=display:flex><span>    searchInput.addEventListener(<span style=color:#fc6a5d>&#39;input&#39;</span>, <span style=color:#fc5fa3>function</span>() {
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>const</span> query = <span style=color:#fc5fa3>this</span>.value;
+</span></span><span style=display:flex><span>        resultsContainer.innerHTML = <span style=color:#fc6a5d>&#39;&#39;</span>;
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>if</span> (query.length &lt; <span style=color:#d0bf69>2</span>) <span style=color:#fc5fa3>return</span>;
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>        <span style=color:#6c7986>// 执行多字段搜索
+</span></span></span><span style=display:flex><span>        <span style=color:#fc5fa3>const</span> results = index.search(query, { limit: <span style=color:#d0bf69>10</span>, enrich: <span style=color:#fc5fa3>true</span> });
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>if</span> (results.length &gt; <span style=color:#d0bf69>0</span>) {
+</span></span><span style=display:flex><span>            <span style=color:#6c7986>// 合并来自 title, content, tags 字段的搜索结果并去重
+</span></span></span><span style=display:flex><span>            <span style=color:#fc5fa3>const</span> allIndices = <span style=color:#fc5fa3>new</span> Set();
+</span></span><span style=display:flex><span>            results.forEach(res =&gt; {
+</span></span><span style=display:flex><span>                res.result.forEach(r =&gt; allIndices.add(r.id));
+</span></span><span style=display:flex><span>            });
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>            allIndices.forEach(id =&gt; {
+</span></span><span style=display:flex><span>                <span style=color:#fc5fa3>const</span> item = <span style=color:#d0a8ff>window</span>.searchData[id];
+</span></span><span style=display:flex><span>                <span style=color:#fc5fa3>const</span> div = <span style=color:#d0a8ff>document</span>.createElement(<span style=color:#fc6a5d>&#39;div&#39;</span>);
+</span></span><span style=display:flex><span>                div.className = <span style=color:#fc6a5d>&#39;search-result-item&#39;</span>;
+</span></span><span style=display:flex><span>                div.innerHTML = <span style=color:#fc6a5d>`&lt;h4&gt;&lt;a href=&#34;</span><span style=color:#fc6a5d>${</span>item.permalink<span style=color:#fc6a5d>}</span><span style=color:#fc6a5d>&#34;&gt;</span><span style=color:#fc6a5d>${</span>item.title<span style=color:#fc6a5d>}</span><span style=color:#fc6a5d>&lt;/a&gt;&lt;/h4&gt;`</span>;
+</span></span><span style=display:flex><span>                resultsContainer.appendChild(div);
+</span></span><span style=display:flex><span>            });
+</span></span><span style=display:flex><span>        } <span style=color:#fc5fa3>else</span> {
+</span></span><span style=display:flex><span>            resultsContainer.innerHTML = <span style=color:#fc6a5d>&#39;&lt;p&gt;未找到匹配结果&lt;/p&gt;&#39;</span>;
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    });
+</span></span><span style=display:flex><span>&lt;/script&gt;
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>&lt;style&gt;
+</span></span><span style=display:flex><span>    <span style=color:#6c7986>/* 基础样式，你可以根据你的暗黑模式进行微调 */</span>
+</span></span><span style=display:flex><span>    .<span style=color:#5dd8ff>search-wrap</span> { <span style=color:#fc5fa3>max-width</span>: <span style=color:#d0bf69>700</span><span style=color:#fc5fa3>px</span>; <span style=color:#fc5fa3>margin</span>: <span style=color:#d0bf69>40</span><span style=color:#fc5fa3>px</span> <span style=color:#fc5fa3>auto</span>; }
+</span></span><span style=display:flex><span>    #search-input { <span style=color:#fc5fa3>width</span>: <span style=color:#d0bf69>100</span><span style=color:#fc5fa3>%</span>; <span style=color:#fc5fa3>padding</span>: <span style=color:#d0bf69>12</span><span style=color:#fc5fa3>px</span>; <span style=color:#fc5fa3>font-size</span>: <span style=color:#d0bf69>18</span><span style=color:#fc5fa3>px</span>; <span style=color:#fc5fa3>border</span>: <span style=color:#d0bf69>2</span><span style=color:#fc5fa3>px</span> <span style=color:#fc5fa3>solid</span> <span style=color:#d0bf69>#ddd</span>; <span style=color:#fc5fa3>border-radius</span>: <span style=color:#d0bf69>8</span><span style=color:#fc5fa3>px</span>; }
+</span></span><span style=display:flex><span>    .<span style=color:#5dd8ff>search-result-item</span> { <span style=color:#fc5fa3>padding</span>: <span style=color:#d0bf69>15</span><span style=color:#fc5fa3>px</span> <span style=color:#d0bf69>0</span>; <span style=color:#fc5fa3>border-bottom</span>: <span style=color:#d0bf69>1</span><span style=color:#fc5fa3>px</span> <span style=color:#fc5fa3>solid</span> <span style=color:#d0bf69>#eee</span>; }
+</span></span><span style=display:flex><span>    .<span style=color:#5dd8ff>search-result-item</span> h4 { <span style=color:#fc5fa3>margin</span>: <span style=color:#d0bf69>0</span>; }
+</span></span><span style=display:flex><span>    .<span style=color:#5dd8ff>search-result-item</span> a { <span style=color:#fc5fa3>color</span>: <span style=color:#d0bf69>#007bff</span>; <span style=color:#fc5fa3>text-decoration</span>: <span style=color:#fc5fa3>none</span>; }
+</span></span><span style=display:flex><span>&lt;/style&gt;
+</span></span><span style=display:flex><span>{{ end }}
+</span></span></code></pre></div><h3 id=3-为什么这个方案比-pagefind-准确>3. 为什么这个方案比 Pagefind 准确？</h3><ol><li><p><strong>Tokenize 策略</strong>：在上面的配置中，我们使用了 <code>tokenize: "forward"</code>。对于中文来说，这意味着它会更智能地处理词头匹配。</p></li><li><p><strong>多字段权重</strong>：你可以通过 FlexSearch 分别搜索 <code>title</code> 和 <code>content</code>，并在展示时优先合并 <code>title</code> 的结果。</p></li><li><p><strong>完全掌控</strong>：Pagefind 是黑盒，而 FlexSearch 允许你通过 <code>split</code> 正则表达式自定义分词逻辑。如果觉得还不准，可以将 <code>tokenize</code> 改为：</p><p>JavaScript</p><div class=highlight><pre tabindex=0 style=color:#fff;background-color:#1f1f24;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-javascript data-lang=javascript><span style=display:flex><span>tokenize: <span style=color:#fc5fa3>function</span>(str){
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>return</span> str.replace(<span style=color:#fc6a5d>/[\x00-\x7F]/g</span>, <span style=color:#fc6a5d>&#34; &#34;</span>).split(<span style=color:#fc6a5d>/\s+/</span>);
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><p>这种方式会将中文字符拆解，实现极高密度的倒排索引，几乎能搜到任何包含的字。</p></li></ol><h3 id=4-配合你的暗黑模式>4. 配合你的暗黑模式</h3><p>你之前提到过 CSS 的暗黑模式调试。对于 FlexSearch，由于 UI 是你自己写的，你可以完全控制：</p><p>CSS</p><div class=highlight><pre tabindex=0 style=color:#fff;background-color:#1f1f24;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-css data-lang=css><span style=display:flex><span>@<span style=color:#fc5fa3>media</span> (prefers-color-scheme: dark) {
+</span></span><span style=display:flex><span>    #search-input {
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>background</span>: <span style=color:#d0bf69>#2d2d2d</span>;
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>color</span>: <span style=color:#d0bf69>#fff</span>;
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>border-color</span>: <span style=color:#d0bf69>#444</span>;
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>    .<span style=color:#5dd8ff>search-result-item</span> a {
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>color</span>: <span style=color:#d0bf69>#8ab4f8</span>;
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h3 id=总结>总结</h3><ul><li><strong>Pagefind</strong>：适合文章极多（上千篇）、追求极致部署速度、对中文准确度要求适中的场景。</li><li><strong>FlexSearch</strong>：适合对搜索结果有“洁癖”、希望中文匹配非常精准的博客。</li></ul><p>由于你之前已经手动处理过 JSON 索引，这个方案对你来说应该更亲切。你现在可以尝试运行 <code>hugo</code> 生成项目，然后通过 <code>index.json</code> 看看 FlexSearch 的反馈。如果有字段匹配不到，我们可以调整 <code>index.json</code> 的字段结构。</p></div></article></main><footer><p>&copy; 2026 <a href=../../ class=back-link>⎡nd3x</a></p></footer></div></body></html>
