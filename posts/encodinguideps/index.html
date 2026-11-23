@@ -1,0 +1,471 @@
+<!doctype html><html lang=en><head><meta charset=UTF-8><meta name=viewport content="width=device-width,initial-scale=1"><title>修复微软11月更新之后PowerShell脚本失效的方法 - ⎡nd3x</title><link rel=icon href=data:,><link rel=preload href=../../fonts/pt-sans-v18-latin-regular.woff2 as=font type=font/woff2 crossorigin><link rel=preload href=../../fonts/pt-sans-v18-latin-700.woff2 as=font type=font/woff2 crossorigin><link rel=stylesheet href=../../css/style.css></head><body><div class=container><main><h1 class=page-title><a href=../../>修复微软11月更新之后PowerShell脚本失效的方法</a></h1><article class=post><div class=post-meta><time class=post-date datetime=2026-11-14>2026-11-14</time></div><div class=post-content><h2 id=encoding-guidance-for-signed-powershell-scripts><a href=https://support.microsoft.com/en-us/servicing/os/windows/docs/2026/11/powershell-sip-canonical-repair>Encoding Guidance for Signed PowerShell Scripts</a></h2><h2 id=overview>Overview</h2><p>Starting with the November 2026 Windows security update, a stricter encoding validation for PowerShell script signing and signature verification is introduced. This intentional security-hardening change may cause affected scripts containing malformed UTF-8 to fail signature validation after the update, even if they previously validated successfully.</p><p>This guide explains the encoding scenarios that can affect signing or signature validation and provides steps to identify affected files, attempt temporary repair where supported, or convert and re-sign them. Not every signature failure is caused by encoding.</p><h2 id=how-windows-determines-encoding>How Windows determines encoding</h2><p>For file-based PowerShell script signing and signature verification, Windows selects an encoding before decoding the entire file:</p><ol><li>A recognized <strong>byte order mark (BOM)</strong> identifies UTF-8 or UTF-16.</li><li>Without a BOM, Windows checks the <strong>first 32 bytes</strong> for encoding patterns, including UTF-16 and UTF-8. If no pattern matches, it uses the machine’s <strong>system code page</strong>.</li><li>Windows decodes the entire file using the selected encoding.</li></ol><p>This hardening change strengthens validation during decoding; it does not change the encoding-selection process described above. Additionally, this hardening change causes Windows to reject malformed UTF-8 files that could previously be decoded using replacement characters. For affected files, signing might fail or an existing signature might be reported as NotSigned.</p><p>A UTF-8 file with an ASCII-only header can be read using a system code page, while a code-page file can be mistaken for UTF-8. A header that looks like UTF-8 does not establish that the rest of the file is valid UTF-8.</p><p>Adding a BOM alone does not correct invalid bytes. The long-term repair is to review the text, save it as valid UTF-8 with BOM, and sign the file again.</p><h2 id=what-symptoms-might-occur-by-this-hardening-change>What symptoms might occur by this hardening change?</h2><p>After installing the Windows security update released on and after November 10, 2026, files affected by this stricter encoding validation might exhibit the following symptoms:</p><table><thead><tr><th style=text-align:left><strong>Where</strong></th><th style=text-align:left><strong>Observed symptom</strong></th></tr></thead><tbody><tr><td style=text-align:left><code>Get-AuthenticodeSignature</code></td><td style=text-align:left><code>Status : NotSigned</code> for an affected, previously signed script.</td></tr><tr><td style=text-align:left><code>Set-AuthenticodeSignature</code></td><td style=text-align:left><code>Status : UnknownError</code>, with the message <em>“No mapping for the Unicode character exists in the target multi-byte code page.”</em></td></tr><tr><td style=text-align:left>App Control for Business (WDAC)</td><td style=text-align:left>On devices enforcing App Control, affected malformed-UTF-8 scripts may run in <code>ConstrainedLanguage</code> mode.</td></tr></tbody></table><p>Caution</p><p>These symptoms can also have other causes and do not, by themselves, confirm an encoding issue or establish that the update caused the failure. Run the tool in <strong>Scan</strong> mode as described in <a href=https://support.microsoft.com/en-us/servicing/os/windows/docs/2026/11/powershell-sip-canonical-repair#find-affected-scripts>Step 1: Find affected scripts</a> before attempting to repair a file.</p><h2 id=affected-scripts>Affected scripts</h2><p>This hardening change introduces stricter validation that may affect scripts containing invalid bytes in the encoding Windows selects. The scenarios below help identify potential encoding issues; not every script in these categories is affected.</p><table><thead><tr><th style=text-align:left><strong>Case</strong></th><th style=text-align:left><strong>Which scripts may be affected</strong></th></tr></thead><tbody><tr><td style=text-align:left><strong>Case 1: Invalid UTF-8</strong></td><td style=text-align:left>Scripts that Windows reads as UTF-8 but that contain invalid UTF-8 data. Stricter validation may cause previously signed scripts to fail signature validation.</td></tr><tr><td style=text-align:left><strong>Case 2: UTF-8 without BOM</strong></td><td style=text-align:left>Some UTF-8 scripts without a BOM may be read using the machine’s system code page—for example, Japanese code page 932. Signing or verification can fail if the file contains bytes that are invalid in the selected encoding.</td></tr><tr><td style=text-align:left><strong>Case 3: Language-specific text encodings</strong></td><td style=text-align:left>Some scripts saved in an encoding such as Shift-JIS may be mistaken for UTF-8. Signing or verification can fail if the file contains data that is not valid UTF-8.</td></tr></tbody></table><p>The hardening change enforces stricter validation, not encoding selection. Use the steps below before choosing a repair option.</p><h2 id=repair-script>Repair script</h2><p>The <a href=#ps>Repair-SignedPowerShellUtf8.ps1</a> script helps identify encoding issues and create copies for repair or conversion. It never overwrites the source file or an existing output file.</p><h3 id=options>Options</h3><table><thead><tr><th style=text-align:left><strong>Mode</strong></th><th style=text-align:left><strong>What it does</strong></th></tr></thead><tbody><tr><td style=text-align:left><strong>Scan</strong> (default)</td><td style=text-align:left>Checks files or folders and reports a potential encoding issue, current signature status, and suggested action. Does not change files.</td></tr><tr><td style=text-align:left><strong>Repair</strong></td><td style=text-align:left>Attempts a temporary repair for cases 1 and 2, keeping the existing signature. Creates a separate copy and checks its signature. Does not create a new signature or require the signing key.</td></tr><tr><td style=text-align:left><strong>ConvertToUtf8Bom</strong></td><td style=text-align:left>Creates a UTF-8-with-BOM copy and removes the old signature. Review the text and sign the copy again; this mode does not sign it for you. This is the offered path for case 3.</td></tr></tbody></table><p>Use <code>-Path</code> to select the input, <code>-Recurse</code> to scan subfolders, and <code>-OutputPath</code> to choose a repair or conversion destination. For conversion, <code>-SourceCodePage</code> specifies the file’s original encoding when needed. Commands are in the steps below; detailed parameter help is in the script’s opening comments.</p><h3 id=limits-and-cases-the-repair-script-cannot-handle>Limits and cases the Repair script cannot handle</h3><table><thead><tr><th style=text-align:left><strong>Situation</strong></th><th style=text-align:left><strong>What to do</strong></th></tr></thead><tbody><tr><td style=text-align:left><strong>Case 3: Language-specific text read as UTF-8</strong></td><td style=text-align:left><code>Repair</code> is not offered for this case. Convert using the correct source encoding, review the text, and sign again.</td></tr><tr><td style=text-align:left><strong>Some case-2 files</strong></td><td style=text-align:left><code>Repair</code> refuses when it cannot produce valid text in the required encoding while preserving the signed text. Convert to UTF-8 with BOM, review, and sign again.</td></tr><tr><td style=text-align:left><strong>Case 2: The repair machine uses a different system code page from the signer</strong></td><td style=text-align:left>Run <code>Repair</code> on a machine with the signer’s system code page, or convert and sign again.</td></tr><tr><td style=text-align:left><strong>The source encoding does not support strict decoding in this tool</strong></td><td style=text-align:left>Use an editor that supports the original encoding to save a UTF-8-with-BOM copy, review it, and sign again.</td></tr><tr><td style=text-align:left><strong>Missing or incorrect text, or script logic errors</strong></td><td style=text-align:left>Encoding repair cannot reconstruct the author’s intended text or fix script logic. Correct the content from a trusted source before signing again.</td></tr></tbody></table><p>Important</p><p><strong>A repair is not guaranteed.</strong> Deploy a repaired copy only if its <strong>SignatureStatus</strong> is <strong>Valid</strong>. Review and test the copy before replacing the deployed script. If repair cannot restore a valid signature and you do not have the signing certificate, ask the publisher for a corrected, signed copy.</p><h3 id=before-you-start>Before you start</h3><ul><li>Save the full script from the appendix as <code>Repair-SignedPowerShellUtf8.ps1</code>. Open Windows PowerShell 5.1 and run the commands from the folder containing it.</li><li>Use an approved copy of the script under your organization’s execution and App Control policies. The tool requires FullLanguage. If execution is blocked, follow your organization’s approval process rather than changing policy as a general setup step.</li><li>To sign a converted file, you need an approved code-signing certificate or access to your publisher’s signing process. Temporary <code>Repair</code> does not require the signing key.</li></ul><h3 id=step-1-find-affected-scripts>Step 1: Find affected scripts</h3><p>Run the tool in read-only Scan mode:</p><pre tabindex=0><code>.\Repair-SignedPowerShellUtf8.ps1 -Mode Scan -Path C:\Scripts -Recurse |
+      Format-Table Path, Issue, SignatureStatus, Action -Wrap
+</code></pre><p>For a single file, set <code>-Path</code> to that file instead. Scan reports the potential encoding issue, current signature status, and suggested action without changing files. The following table helps you to understand the reported issue.</p><table><thead><tr><th style=text-align:left><strong>Issue</strong></th><th style=text-align:left><strong>What it indicates</strong></th><th style=text-align:left><strong>Next step</strong></th></tr></thead><tbody><tr><td style=text-align:left><code>MalformedUtf8</code></td><td style=text-align:left>Potential case 1: The file is read as UTF-8 but contains invalid UTF-8 data.</td><td style=text-align:left>Try <code>Repair</code> for an existing signed file, or convert to UTF-8 with BOM, review, and sign again.</td></tr><tr><td style=text-align:left><code>Utf8WithoutBom</code></td><td style=text-align:left>Potential case 2: The file is valid UTF-8 without a BOM but is not valid in the system text encoding Windows selected.</td><td style=text-align:left>For an existing signed file, try <code>Repair</code> using the signer’s system code page. Otherwise convert, review, and sign.</td></tr><tr><td style=text-align:left><code>CodePageTextReadAsUtf8</code></td><td style=text-align:left>Potential case 3: A language-specific encoding may have been mistaken for UTF-8.</td><td style=text-align:left>Confirm the source encoding, convert, review, and sign again. <code>Repair</code> is not offered for this label.</td></tr><tr><td style=text-align:left><code>NotValidInCodePage</code></td><td style=text-align:left>The file is not valid in the selected system code page and is not valid UTF-8.</td><td style=text-align:left>Confirm the source encoding before choosing repair or conversion.</td></tr><tr><td style=text-align:left><code>None</code></td><td style=text-align:left>No encoding issue detected by this scan.</td><td style=text-align:left>Do not run encoding repair solely because the signature status is <code>NotSigned</code>.</td></tr></tbody></table><p>Caution</p><p>These labels are diagnostic hints, not proof of the intended source encoding.</p><p><strong>Unsigned files:</strong> Scan checks both signed and unsigned files. <code>NotSigned</code> alone does not mean a file is affected, and Scan cannot establish whether it was previously signed. An unsigned file with an encoding issue may need conversion before signing, but it has no existing signature to preserve.</p><h3 id=step-2-repair-or-convert-affected-scripts>Step 2: Repair or convert affected scripts</h3><p>Choose one of the following options for a file flagged by Scan. <strong>Conversion and re-signing</strong> are recommended. Temporary <strong>Repair</strong> may help with previously signed files in cases 1 and 2, but is not offered for case 3.</p><p><strong>Recommended: Convert to UTF-8 with BOM and sign again</strong></p><p>Create a UTF-8-with-BOM copy. The source remains unchanged, and the old signature is removed from the copy:</p><pre tabindex=0><code>.\Repair-SignedPowerShellUtf8.ps1 -Mode ConvertToUtf8Bom -Path C:\Scripts\Deploy.ps1
+</code></pre><p>The default output is <code>C:\Scripts\Deploy.utf8bom.ps1 </code>. For case 3, specify the file’s known original encoding with <code>-SourceCodePage</code>; for example, add <code>-SourceCodePage 932</code> for a Shift-JIS file.</p><p>Review the converted text and correct any errors before signing. Use your organization’s approved signing process; the commands below assume <code>$cert</code> already contains your approved code-signing certificate:</p><pre tabindex=0><code>Set-AuthenticodeSignature -FilePath C:\Scripts\Deploy.utf8bom.ps1 -Certificate $cert
+    Get-AuthenticodeSignature -FilePath C:\Scripts\Deploy.utf8bom.ps1 |
+        Format-List Status, StatusMessage
+</code></pre><p>Confirm <code>Status : Valid</code> and test the reviewed copy before deployment.</p><p><strong>Temporary: Attempt a repair without re-signing</strong></p><p>Repair attempts to create a copy whose existing signature validates. It does not reconstruct missing text or fix script errors, and some files cannot be repaired:</p><pre tabindex=0><code>.\Repair-SignedPowerShellUtf8.ps1 -Mode Repair -Path C:\Scripts\Deploy.ps1
+</code></pre><p>A successful repair reports:</p><pre tabindex=0><code class=language-RepairedPath data-lang=RepairedPath>    SignatureStatus : Valid
+</code></pre><p>For case 2, use a machine with the <strong>same system code page</strong> as the original signer.</p><p>Deploy the copy only after its <code>SignatureStatus</code> reports <code>Valid</code> and you have reviewed and tested it.</p><h2 id=sample-powershell-script-to-repair-script-signature-encoding-issues><a href=https://support.microsoft.com/en-us/servicing/os/windows/docs/2026/11/powershell-sip-repair-script>Sample PowerShell script to repair script-signature encoding issues</a><a id=ps></a></h2><h2 id=summary>Summary</h2><p>The <strong><a href=Repair-SignedPowerShellUtf8.ps1>Repair-SignedPowerShellUtf8.ps1</a></strong> script scans PowerShell files for potential encoding issues, attempts a temporary repair while retaining the existing signature, or creates a UTF-8-with-BOM copy for review and re-signing. The script does not overwrite the source file or an existing output file.</p><h2 id=before-you-run-the-script><strong>Before you run the script</strong></h2><p>Use Windows PowerShell 5.1 in a FullLanguage session and follow your organization&rsquo;s execution and App Control approval policies. Do not disable policy to run the script. Conversion removes the old signature from the copy; review the text and use an approved signing process to sign it again. Temporary repair does not require the signing key.</p><p>Important</p><p><strong>Repair is not guaranteed.</strong> Deploy a repaired copy only if <strong>SignatureStatus</strong> is <strong>Valid</strong> and you have reviewed and tested it. If repair fails and you cannot re-sign the file, ask the publisher for a corrected, signed copy.</p><h2 id=repair-signedpowershellutf8ps1><strong>Repair-SignedPowerShellUtf8.ps1</strong></h2><p>Copy the complete script below and save it as <strong><a href=Repair-SignedPowerShellUtf8.ps1>Repair-SignedPowerShellUtf8.ps1</a></strong>. The opening comments describe the modes, parameters, and examples. Scan is the default, read-only mode.</p><div class=highlight><pre tabindex=0 style=color:#fff;background-color:#1f1f24;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-powershell data-lang=powershell><span style=display:flex><span><span style=color:#6c7986>&lt;#
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>.</span><span style=color:#fc6a5d>SYNOPSIS</span><span style=color:#6c7986>
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    Finds and fixes signed PowerShell scripts whose signature shows NotSigned,
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    or that cannot be signed, because of how the script file&#39;s text is encoded.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986> 
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>.</span><span style=color:#fc6a5d>DESCRIPTION</span><span style=color:#6c7986>
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    -Mode Scan (default, read-only)
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>        Reports possible encoding issues:
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>          None                     No encoding issue detected.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>          MalformedUtf8            UTF-8 file containing invalid UTF-8 bytes.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>          Utf8WithoutBom           UTF-8 file without a BOM that is not valid
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>                                   text in this machine&#39;s code page.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>          NotValidInCodePage       Not valid text in this machine&#39;s code page.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>          CodePageTextReadAsUtf8   Code-page text (for example Shift-JIS) that
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>                                   Windows reads as UTF-8.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986> 
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    -Mode Repair (temporary fix, keeps the existing signature)
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>        Attempts to write a copy with the same signed text, then checks whether
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>        its existing signature is Valid. Script text is not improved;
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>        characters that were already unreadable stay unreadable.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>        For Utf8WithoutBom and NotValidInCodePage, run on a machine with the
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>        same system code page as the machine that signed the file.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>        Not available for CodePageTextReadAsUtf8; use ConvertToUtf8Bom.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986> 
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    -Mode ConvertToUtf8Bom (long-term fix, requires re-signing)
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>        Writes a copy saved as UTF-8 with BOM with the old signature removed.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>        Review it and sign it again.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986> 
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    The source file is never modified. Requires a FullLanguage session; on
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    machines with application control, sign this script with a trusted
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    certificate first.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986> 
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>.PARAMETER Path
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    Scan: one or more files or folders. Repair / ConvertToUtf8Bom: one file.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986> 
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>.PARAMETER Recurse
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    Scan: include subfolders.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986> 
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>.PARAMETER OutputPath
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    Repair / ConvertToUtf8Bom: destination. Defaults to
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    &lt;name&gt;.repaired.&lt;ext&gt; or &lt;name&gt;.utf8bom.&lt;ext&gt; next to the source.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986> 
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>.PARAMETER SourceCodePage
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    ConvertToUtf8Bom: code page the file was written in (for example 932),
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    when it cannot be detected. Encodings that cannot be decoded strictly by
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    Windows are not supported; use an editor to convert those files instead.
+</span></span></span><span style=display:flex><span><span style=color:#6c7986> 
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>.</span><span style=color:#fc6a5d>EXAMPLE</span><span style=color:#6c7986>
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    .\Repair-SignedPowerShellUtf8.ps1 -Path C:\Scripts -Recurse
+</span></span></span><span style=display:flex><span><span style=color:#6c7986> 
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>.</span><span style=color:#fc6a5d>EXAMPLE</span><span style=color:#6c7986>
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    .\Repair-SignedPowerShellUtf8.ps1 -Mode Repair -Path C:\Scripts\Deploy.ps1
+</span></span></span><span style=display:flex><span><span style=color:#6c7986> 
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>.</span><span style=color:#fc6a5d>EXAMPLE</span><span style=color:#6c7986>
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>    .\Repair-SignedPowerShellUtf8.ps1 -Mode ConvertToUtf8Bom -Path C:\Scripts\Deploy.ps1
+</span></span></span><span style=display:flex><span><span style=color:#6c7986>#&gt;</span>
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>[<span style=color:#d0a8ff>CmdletBinding</span>()]
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>param</span>(
+</span></span><span style=display:flex><span>    [<span style=color:#d0a8ff>Parameter</span>(Mandatory, Position = <span style=color:#d0bf69>0</span>)]
+</span></span><span style=display:flex><span>    [string[]] <span style=color:#41a1c0>$Path</span>,
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>    [<span style=color:#d0a8ff>ValidateSet</span>(<span style=color:#fc6a5d>&#39;Scan&#39;</span>, <span style=color:#fc6a5d>&#39;Repair&#39;</span>, <span style=color:#fc6a5d>&#39;ConvertToUtf8Bom&#39;</span>)]
+</span></span><span style=display:flex><span>    [string] <span style=color:#41a1c0>$Mode</span> = <span style=color:#fc6a5d>&#39;Scan&#39;</span>,
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>    [switch] <span style=color:#41a1c0>$Recurse</span>,
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>    [string] <span style=color:#41a1c0>$OutputPath</span>,
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>    [int] <span style=color:#41a1c0>$SourceCodePage</span>
+</span></span><span style=display:flex><span>)
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span><span style=color:#d0a8ff>Set-StrictMode</span> -Version Latest
+</span></span><span style=display:flex><span><span style=color:#41a1c0>$ErrorActionPreference</span> = <span style=color:#fc6a5d>&#39;Stop&#39;</span>
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$ExecutionContext</span>.SessionState.LanguageMode -ne <span style=color:#fc6a5d>&#39;FullLanguage&#39;</span>)
+</span></span><span style=display:flex><span>{
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>throw</span> <span style=color:#fc6a5d>&#39;This tool must run in a FullLanguage session. On machines with application control, sign this script with a trusted certificate and run it again.&#39;</span>
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>if</span> (-not (<span style=color:#fc6a5d>&#39;SipScriptRepair.Native&#39;</span> -as [type]))
+</span></span><span style=display:flex><span>{
+</span></span><span style=display:flex><span>    <span style=color:#d0a8ff>Add-Type</span> -TypeDefinition <span style=color:#fc6a5d>@&#39;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>using System;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>using System.ComponentModel;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>using System.Runtime.InteropServices;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>using System.Text;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d> 
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>namespace SipScriptRepair
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>{
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>    public static class Native
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>    {
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        private const uint MB_ERR_INVALID_CHARS = 0x8;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        private const uint WC_NO_BEST_FIT_CHARS = 0x400;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        private const int ERROR_NO_UNICODE_TRANSLATION = 1113;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        private const int ERROR_INVALID_FLAGS = 1004;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        private const int UnicodeTests =
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            0x0001 | 0x0010 | 0x0004 | 0x0040 | 0x0008 |
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            0x0080 | 0x0100 | 0x0200 | 0x0400 | 0x1000;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d> 
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        [DllImport(&#34;kernel32.dll&#34;, SetLastError = true, CharSet = CharSet.Unicode)]
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        private static extern int MultiByteToWideChar(uint codePage, uint flags,
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            byte[] input, int inputCount, [Out] char[] output, int outputCount);
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d> 
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        [DllImport(&#34;kernel32.dll&#34;, SetLastError = true, CharSet = CharSet.Unicode)]
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        private static extern int WideCharToMultiByte(uint codePage, uint flags,
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            char[] input, int inputCount, [Out] byte[] output, int outputCount,
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            IntPtr defaultChar, out int usedDefaultChar);
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d> 
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        [DllImport(&#34;kernel32.dll&#34;)]
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        public static extern uint GetACP();
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d> 
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        [DllImport(&#34;advapi32.dll&#34;)]
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        [return: MarshalAs(UnmanagedType.Bool)]
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        private static extern bool IsTextUnicode(byte[] buffer, int size, ref int result);
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d> 
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        // Returns null when strict is true and the bytes are not valid in the code page.
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        public static string Decode(uint codePage, bool strict, byte[] bytes)
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        {
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            if (bytes.Length == 0) { return String.Empty; }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            uint flags = strict ? MB_ERR_INVALID_CHARS : 0;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            int needed = MultiByteToWideChar(codePage, flags, bytes, bytes.Length, null, 0);
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            if (needed == 0)
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            {
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                int error = Marshal.GetLastWin32Error();
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                if (strict &amp;&amp; error == ERROR_NO_UNICODE_TRANSLATION) { return null; }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                if (strict &amp;&amp; error == ERROR_INVALID_FLAGS)
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                {
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                    throw new NotSupportedException(&#34;Code page &#34; + codePage +
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                        &#34; does not support strict decoding in this tool. Use an editor to save the file as UTF-8 with BOM, review it, and sign it again.&#34;);
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                throw new Win32Exception(error);
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            char[] output = new char[needed];
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            int written = MultiByteToWideChar(codePage, flags, bytes, bytes.Length, output, needed);
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            if (written == 0) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            return new string(output, 0, written);
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d> 
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        // Returns null when any character cannot be represented exactly.
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        public static byte[] EncodeExact(uint codePage, string text)
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        {
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            if (text.Length == 0) { return new byte[0]; }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            if (codePage == 65001)
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            {
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                try { return new UTF8Encoding(false, true).GetBytes(text); }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                catch (EncoderFallbackException) { return null; }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            char[] chars = text.ToCharArray();
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            int usedDefault;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            int needed = WideCharToMultiByte(codePage, WC_NO_BEST_FIT_CHARS, chars, chars.Length,
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                null, 0, IntPtr.Zero, out usedDefault);
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            if (needed == 0) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            if (usedDefault != 0) { return null; }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            byte[] output = new byte[needed];
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            int written = WideCharToMultiByte(codePage, WC_NO_BEST_FIT_CHARS, chars, chars.Length,
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                output, needed, IntPtr.Zero, out usedDefault);
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            if (written == 0) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            return usedDefault != 0 ? null : output;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d> 
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        public static bool LooksLikeUnicode(byte[] bytes)
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        {
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            if (bytes.Length == 0) { return false; }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            int tests = UnicodeTests;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            return IsTextUnicode(bytes, bytes.Length, ref tests);
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d> 
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        // Counts UTF-8-shaped multi-byte sequences (lead byte plus the right number of
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        // continuation bytes, even if overlong or a surrogate) and bytes that break that shape.
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        public static void CountUtf8(byte[] b, out int valid, out int invalid)
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        {
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            valid = 0; invalid = 0;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            int i = 0;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            while (i &lt; b.Length)
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            {
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                byte x = b[i];
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                if (x &lt; 0x80) { i++; continue; }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                int len = 0;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                if (x &gt;= 0xC0 &amp;&amp; x &lt;= 0xDF) { len = 2; }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                else if (x &gt;= 0xE0 &amp;&amp; x &lt;= 0xEF) { len = 3; }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                else if (x &gt;= 0xF0 &amp;&amp; x &lt;= 0xF7) { len = 4; }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                bool ok = len &gt; 0 &amp;&amp; i + len &lt;= b.Length;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                for (int k = 1; ok &amp;&amp; k &lt; len; k++)
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                {
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                    ok = (b[i + k] &amp; 0xC0) == 0x80;
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>                if (ok) { valid++; i += len; } else { invalid++; i++; }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>            }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>        }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>    }
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>}
+</span></span></span><span style=display:flex><span><span style=color:#fc6a5d>&#39;@</span>
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span><span style=color:#41a1c0>$scriptExtensions</span> = <span style=color:#fc6a5d>&#39;.ps1&#39;</span>, <span style=color:#fc6a5d>&#39;.psm1&#39;</span>, <span style=color:#fc6a5d>&#39;.psd1&#39;</span>, <span style=color:#fc6a5d>&#39;.ps1xml&#39;</span>, <span style=color:#fc6a5d>&#39;.psc1&#39;</span>, <span style=color:#fc6a5d>&#39;.cdxml&#39;</span>
+</span></span><span style=display:flex><span><span style=color:#41a1c0>$acp</span> = [SipScriptRepair.Native]::GetACP()
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>function</span> <span style=color:#d0a8ff>Test-Utf8Shape([byte</span>[]] <span style=color:#41a1c0>$Bytes</span>)
+</span></span><span style=display:flex><span>{
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$remaining</span> = <span style=color:#d0bf69>0</span>
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$allAscii</span> = <span style=color:#41a1c0>$true</span>
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>foreach</span> (<span style=color:#41a1c0>$value</span> <span style=color:#fc5fa3>in</span> <span style=color:#41a1c0>$Bytes</span>)
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        [int] <span style=color:#41a1c0>$current</span> = <span style=color:#41a1c0>$value</span>
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$current</span> -ge 0x80) { <span style=color:#41a1c0>$allAscii</span> = <span style=color:#41a1c0>$false</span> }
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$remaining</span> -eq <span style=color:#d0bf69>0</span>)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$current</span> -ge 0x80)
+</span></span><span style=display:flex><span>            {
+</span></span><span style=display:flex><span>                <span style=color:#41a1c0>$shifted</span> = <span style=color:#41a1c0>$current</span>
+</span></span><span style=display:flex><span>                <span style=color:#41a1c0>$ones</span> = <span style=color:#d0bf69>0</span>
+</span></span><span style=display:flex><span>                <span style=color:#fc5fa3>do</span> { <span style=color:#41a1c0>$shifted</span> = ((<span style=color:#41a1c0>$shifted</span> -shl <span style=color:#d0bf69>1</span>) -band 0xFF); <span style=color:#41a1c0>$ones</span>++ } <span style=color:#fc5fa3>while</span> ((<span style=color:#41a1c0>$shifted</span> -band 0x80) -ne <span style=color:#d0bf69>0</span>)
+</span></span><span style=display:flex><span>                <span style=color:#41a1c0>$remaining</span> = <span style=color:#41a1c0>$ones</span> - <span style=color:#d0bf69>1</span>
+</span></span><span style=display:flex><span>                <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$remaining</span> -eq <span style=color:#d0bf69>0</span>) { <span style=color:#fc5fa3>return</span> <span style=color:#41a1c0>$false</span> }
+</span></span><span style=display:flex><span>            }
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>else</span>
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#fc5fa3>if</span> ((<span style=color:#41a1c0>$current</span> -band 0xC0) -ne 0x80) { <span style=color:#fc5fa3>return</span> <span style=color:#41a1c0>$false</span> }
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$remaining</span>--
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>return</span> (<span style=color:#41a1c0>$remaining</span> -eq <span style=color:#d0bf69>0</span> -and -not <span style=color:#41a1c0>$allAscii</span>)
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span><span style=color:#6c7986># Windows decides how to read a script from its first 32 bytes.</span>
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>function</span> <span style=color:#d0a8ff>Get-ReadEncoding([byte</span>[]] <span style=color:#41a1c0>$Bytes</span>)
+</span></span><span style=display:flex><span>{
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$length</span> = [Math]::Min(<span style=color:#d0bf69>32</span>, <span style=color:#41a1c0>$Bytes</span>.Length)
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$length</span> -le <span style=color:#d0bf69>1</span>) { <span style=color:#fc5fa3>return</span> <span style=color:#fc6a5d>&#39;Ansi&#39;</span> }
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$header</span> = <span style=color:#d0a8ff>New-Object</span> <span style=color:#fc6a5d>&#39;byte[]&#39;</span> <span style=color:#41a1c0>$length</span>
+</span></span><span style=display:flex><span>    [Array]::Copy(<span style=color:#41a1c0>$Bytes</span>, <span style=color:#41a1c0>$header</span>, <span style=color:#41a1c0>$length</span>)
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> ((<span style=color:#41a1c0>$header</span>[<span style=color:#d0bf69>0</span>] -eq 0xFF -and <span style=color:#41a1c0>$header</span>[<span style=color:#d0bf69>1</span>] -eq 0xFE) -or (<span style=color:#41a1c0>$header</span>[<span style=color:#d0bf69>0</span>] -eq 0xFE -and <span style=color:#41a1c0>$header</span>[<span style=color:#d0bf69>1</span>] -eq 0xFF)) { <span style=color:#fc5fa3>return</span> <span style=color:#fc6a5d>&#39;Utf16&#39;</span> }
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$length</span> -gt <span style=color:#d0bf69>2</span> -and <span style=color:#41a1c0>$header</span>[<span style=color:#d0bf69>0</span>] -eq 0xEF -and <span style=color:#41a1c0>$header</span>[<span style=color:#d0bf69>1</span>] -eq 0xBB -and <span style=color:#41a1c0>$header</span>[<span style=color:#d0bf69>2</span>] -eq 0xBF) { <span style=color:#fc5fa3>return</span> <span style=color:#fc6a5d>&#39;Utf8&#39;</span> }
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> ([SipScriptRepair.Native]::LooksLikeUnicode(<span style=color:#41a1c0>$header</span>)) { <span style=color:#fc5fa3>return</span> <span style=color:#fc6a5d>&#39;Utf16&#39;</span> }
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> (<span style=color:#d0a8ff>Test-Utf8Shape</span> <span style=color:#41a1c0>$header</span>) { <span style=color:#fc5fa3>return</span> <span style=color:#fc6a5d>&#39;Utf8&#39;</span> }
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>return</span> <span style=color:#fc6a5d>&#39;Ansi&#39;</span>
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>function</span> <span style=color:#d0a8ff>Get-ScriptState([string</span>] <span style=color:#41a1c0>$FilePath</span>)
+</span></span><span style=display:flex><span>{
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$bytes</span> = [IO.File]::ReadAllBytes(<span style=color:#41a1c0>$FilePath</span>)
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$readAs</span> = <span style=color:#d0a8ff>Get-ReadEncoding</span> <span style=color:#41a1c0>$bytes</span>
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$hasBom</span> = <span style=color:#41a1c0>$bytes</span>.Length -ge <span style=color:#d0bf69>3</span> -and <span style=color:#41a1c0>$bytes</span>[<span style=color:#d0bf69>0</span>] -eq 0xEF -and <span style=color:#41a1c0>$bytes</span>[<span style=color:#d0bf69>1</span>] -eq 0xBB -and <span style=color:#41a1c0>$bytes</span>[<span style=color:#d0bf69>2</span>] -eq 0xBF
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$validUtf8</span> = <span style=color:#41a1c0>$null</span> -ne [SipScriptRepair.Native]::Decode(<span style=color:#d0bf69>65001</span>, <span style=color:#41a1c0>$true</span>, <span style=color:#41a1c0>$bytes</span>)
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$issue</span> = <span style=color:#fc6a5d>&#39;None&#39;</span>
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$readAs</span> -eq <span style=color:#fc6a5d>&#39;Utf8&#39;</span> -and -not <span style=color:#41a1c0>$validUtf8</span>)
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$good</span> = <span style=color:#d0bf69>0</span>; <span style=color:#41a1c0>$bad</span> = <span style=color:#d0bf69>0</span>
+</span></span><span style=display:flex><span>        [SipScriptRepair.Native]::CountUtf8(<span style=color:#41a1c0>$bytes</span>, [ref] <span style=color:#41a1c0>$good</span>, [ref] <span style=color:#41a1c0>$bad</span>)
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$issue</span> = <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$hasBom</span> -or <span style=color:#41a1c0>$good</span> -ge <span style=color:#41a1c0>$bad</span>) { <span style=color:#fc6a5d>&#39;MalformedUtf8&#39;</span> } <span style=color:#fc5fa3>else</span> { <span style=color:#fc6a5d>&#39;CodePageTextReadAsUtf8&#39;</span> }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>elseif</span> (<span style=color:#41a1c0>$readAs</span> -eq <span style=color:#fc6a5d>&#39;Ansi&#39;</span> -and <span style=color:#41a1c0>$null</span> -eq [SipScriptRepair.Native]::Decode(<span style=color:#41a1c0>$acp</span>, <span style=color:#41a1c0>$true</span>, <span style=color:#41a1c0>$bytes</span>))
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$issue</span> = <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$validUtf8</span>) { <span style=color:#fc6a5d>&#39;Utf8WithoutBom&#39;</span> } <span style=color:#fc5fa3>else</span> { <span style=color:#fc6a5d>&#39;NotValidInCodePage&#39;</span> }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>    [pscustomobject]<span style=color:#41a1c0>@</span>{ Bytes = <span style=color:#41a1c0>$bytes</span>; ReadAs = <span style=color:#41a1c0>$readAs</span>; HasBom = <span style=color:#41a1c0>$hasBom</span>; ValidUtf8 = <span style=color:#41a1c0>$validUtf8</span>; Issue = <span style=color:#41a1c0>$issue</span> }
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>function</span> <span style=color:#d0a8ff>Get-Action([string</span>] <span style=color:#41a1c0>$Issue</span>)
+</span></span><span style=display:flex><span>{
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>switch</span> (<span style=color:#41a1c0>$Issue</span>)
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#fc6a5d>&#39;None&#39;</span>                   { <span style=color:#fc6a5d>&#39;No action needed.&#39;</span> }
+</span></span><span style=display:flex><span>        <span style=color:#fc6a5d>&#39;MalformedUtf8&#39;</span>          { <span style=color:#fc6a5d>&#39;Temporary: -Mode Repair. Long-term: -Mode ConvertToUtf8Bom and re-sign.&#39;</span> }
+</span></span><span style=display:flex><span>        <span style=color:#fc6a5d>&#39;Utf8WithoutBom&#39;</span>         { <span style=color:#fc6a5d>&#34;Temporary: -Mode Repair on a machine with code page </span><span style=color:#41a1c0>$acp</span><span style=color:#fc6a5d> (same as signer). Long-term: -Mode ConvertToUtf8Bom and re-sign.&#34;</span> }
+</span></span><span style=display:flex><span>        <span style=color:#fc6a5d>&#39;NotValidInCodePage&#39;</span>     { <span style=color:#fc6a5d>&#34;Temporary: -Mode Repair on a machine with code page </span><span style=color:#41a1c0>$acp</span><span style=color:#fc6a5d> (same as signer). Long-term: -Mode ConvertToUtf8Bom and re-sign.&#34;</span> }
+</span></span><span style=display:flex><span>        <span style=color:#fc6a5d>&#39;CodePageTextReadAsUtf8&#39;</span> { <span style=color:#fc6a5d>&#34;-Mode ConvertToUtf8Bom on a machine with the code page the file was written in (or use -SourceCodePage), then re-sign.&#34;</span> }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>function</span> <span style=color:#d0a8ff>Resolve-SingleFile</span>
+</span></span><span style=display:flex><span>{
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$Path</span>.Count -ne <span style=color:#d0bf69>1</span>) { <span style=color:#fc5fa3>throw</span> <span style=color:#fc6a5d>&#34;-Mode </span><span style=color:#41a1c0>$Mode</span><span style=color:#fc6a5d> accepts exactly one file.&#34;</span> }
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$item</span> = <span style=color:#d0a8ff>Get-Item</span> -LiteralPath <span style=color:#41a1c0>$Path</span>[<span style=color:#d0bf69>0</span>]
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$item</span>.PSIsContainer) { <span style=color:#fc5fa3>throw</span> <span style=color:#fc6a5d>&#34;-Mode </span><span style=color:#41a1c0>$Mode</span><span style=color:#fc6a5d> accepts a file, not a folder.&#34;</span> }
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>return</span> <span style=color:#41a1c0>$item</span>.FullName
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>function</span> <span style=color:#d0a8ff>Get-OutputFile([string</span>] <span style=color:#41a1c0>$Source</span>, [string] <span style=color:#41a1c0>$Suffix</span>)
+</span></span><span style=display:flex><span>{
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$target</span> = <span style=color:#41a1c0>$OutputPath</span>
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> ([string]::IsNullOrWhiteSpace(<span style=color:#41a1c0>$target</span>))
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$target</span> = <span style=color:#d0a8ff>Join-Path</span> ([IO.Path]::GetDirectoryName(<span style=color:#41a1c0>$Source</span>)) (
+</span></span><span style=display:flex><span>            [IO.Path]::GetFileNameWithoutExtension(<span style=color:#41a1c0>$Source</span>) + <span style=color:#41a1c0>$Suffix</span> + [IO.Path]::GetExtension(<span style=color:#41a1c0>$Source</span>))
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$provider</span> = <span style=color:#41a1c0>$null</span>
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$drive</span> = <span style=color:#41a1c0>$null</span>
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$target</span> = <span style=color:#41a1c0>$ExecutionContext</span>.SessionState.Path.GetUnresolvedProviderPathFromPSPath(<span style=color:#41a1c0>$target</span>, [ref] <span style=color:#41a1c0>$provider</span>, [ref] <span style=color:#41a1c0>$drive</span>)
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$provider</span>.Name -ne <span style=color:#fc6a5d>&#39;FileSystem&#39;</span>) { <span style=color:#fc5fa3>throw</span> <span style=color:#fc6a5d>&#39;OutputPath must be a file-system path.&#39;</span> }
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> ([string]::Equals(<span style=color:#41a1c0>$Source</span>, <span style=color:#41a1c0>$target</span>, [StringComparison]::OrdinalIgnoreCase)) { <span style=color:#fc5fa3>throw</span> <span style=color:#fc6a5d>&#39;OutputPath must be different from the source file.&#39;</span> }
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> ([IO.File]::Exists(<span style=color:#41a1c0>$target</span>)) { <span style=color:#fc5fa3>throw</span> <span style=color:#fc6a5d>&#34;The output file already exists: </span><span style=color:#41a1c0>$target</span><span style=color:#fc6a5d>&#34;</span> }
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>return</span> <span style=color:#41a1c0>$target</span>
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>function</span> <span style=color:#d0a8ff>Remove-TerminalSignatureBlock([string</span>] <span style=color:#41a1c0>$Text</span>)
+</span></span><span style=display:flex><span>{
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$marker</span> = <span style=color:#fc6a5d>&#39;# SIG # Begin signature block&#39;</span>
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$start</span> = <span style=color:#41a1c0>$Text</span>.LastIndexOf(<span style=color:#41a1c0>$marker</span>, [StringComparison]::Ordinal)
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$start</span> -lt <span style=color:#d0bf69>0</span> -or (<span style=color:#41a1c0>$start</span> -gt <span style=color:#d0bf69>0</span> -and <span style=color:#41a1c0>$Text</span>[<span style=color:#41a1c0>$start</span> - <span style=color:#d0bf69>1</span>] -ne <span style=color:#fc6a5d>&#34;</span><span style=color:#fc6a5d>`n</span><span style=color:#fc6a5d>&#34;</span>)) { <span style=color:#fc5fa3>return</span> <span style=color:#41a1c0>$Text</span> }
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$tail</span> = <span style=color:#41a1c0>$Text</span>.Substring(<span style=color:#41a1c0>$start</span>)
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$tail</span> -notmatch <span style=color:#fc6a5d>&#39;\A# SIG # Begin signature block\r?\n(?:#[^\r\n]*\r?\n)*# SIG # End signature block(?:\r?\n)?\z&#39;</span>)
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>return</span> <span style=color:#41a1c0>$Text</span>
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$tokens</span> = <span style=color:#41a1c0>$null</span>
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$parseErrors</span> = <span style=color:#41a1c0>$null</span>
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$null</span> = [System.Management.Automation.Language.Parser]::ParseInput(<span style=color:#41a1c0>$Text</span>, [ref] <span style=color:#41a1c0>$tokens</span>, [ref] <span style=color:#41a1c0>$parseErrors</span>)
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$begin</span> = <span style=color:#41a1c0>@</span>(<span style=color:#41a1c0>$tokens</span> | <span style=color:#d0a8ff>Where-Object</span> {
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$_</span>.Kind -eq <span style=color:#fc6a5d>&#39;Comment&#39;</span> -and <span style=color:#41a1c0>$_</span>.Extent.StartOffset -eq <span style=color:#41a1c0>$start</span> -and <span style=color:#41a1c0>$_</span>.Text -ceq <span style=color:#41a1c0>$marker</span>
+</span></span><span style=display:flex><span>    })
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$begin</span>.Count -ne <span style=color:#d0bf69>1</span>)
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>throw</span> <span style=color:#fc6a5d>&#39;The trailing signature markers are inside script text, not an unambiguous comment block. Review the file and remove the old signature manually before converting.&#39;</span>
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>return</span> <span style=color:#41a1c0>$Text</span>.Substring(<span style=color:#d0bf69>0</span>, <span style=color:#41a1c0>$start</span>)
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>function</span> <span style=color:#d0a8ff>Write-NewFile([string</span>] <span style=color:#41a1c0>$Target</span>, [byte[]] <span style=color:#41a1c0>$Bytes</span>)
+</span></span><span style=display:flex><span>{
+</span></span><span style=display:flex><span>    <span style=color:#41a1c0>$stream</span> = [IO.File]::Open(<span style=color:#41a1c0>$Target</span>, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+</span></span><span style=display:flex><span>    <span style=color:#fc5fa3>try</span> { <span style=color:#41a1c0>$stream</span>.Write(<span style=color:#41a1c0>$Bytes</span>, <span style=color:#d0bf69>0</span>, <span style=color:#41a1c0>$Bytes</span>.Length) } <span style=color:#fc5fa3>finally</span> { <span style=color:#41a1c0>$stream</span>.Dispose() }
+</span></span><span style=display:flex><span>}
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span><span style=color:#fc5fa3>switch</span> (<span style=color:#41a1c0>$Mode</span>)
+</span></span><span style=display:flex><span>{
+</span></span><span style=display:flex><span>    <span style=color:#fc6a5d>&#39;Scan&#39;</span>
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$files</span> = <span style=color:#fc5fa3>foreach</span> (<span style=color:#41a1c0>$p</span> <span style=color:#fc5fa3>in</span> <span style=color:#41a1c0>$Path</span>)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$item</span> = <span style=color:#d0a8ff>Get-Item</span> -LiteralPath <span style=color:#41a1c0>$p</span>
+</span></span><span style=display:flex><span>            <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$item</span>.PSIsContainer)
+</span></span><span style=display:flex><span>            {
+</span></span><span style=display:flex><span>                <span style=color:#d0a8ff>Get-ChildItem</span> -LiteralPath <span style=color:#41a1c0>$item</span>.FullName -File -Recurse:<span style=color:#41a1c0>$Recurse</span> |
+</span></span><span style=display:flex><span>                    <span style=color:#d0a8ff>Where-Object</span> { <span style=color:#41a1c0>$scriptExtensions</span> -contains <span style=color:#41a1c0>$_</span>.Extension.ToLowerInvariant() }
+</span></span><span style=display:flex><span>            }
+</span></span><span style=display:flex><span>            <span style=color:#fc5fa3>else</span> { <span style=color:#41a1c0>$item</span> }
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>foreach</span> (<span style=color:#41a1c0>$file</span> <span style=color:#fc5fa3>in</span> <span style=color:#41a1c0>$files</span>)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$state</span> = <span style=color:#d0a8ff>Get-ScriptState</span> <span style=color:#41a1c0>$file</span>.FullName
+</span></span><span style=display:flex><span>            [pscustomobject]<span style=color:#41a1c0>@</span>{
+</span></span><span style=display:flex><span>                Path            = <span style=color:#41a1c0>$file</span>.FullName
+</span></span><span style=display:flex><span>                Issue           = <span style=color:#41a1c0>$state</span>.Issue
+</span></span><span style=display:flex><span>                SignatureStatus = (<span style=color:#d0a8ff>Get-AuthenticodeSignature</span> -LiteralPath <span style=color:#41a1c0>$file</span>.FullName).Status
+</span></span><span style=display:flex><span>                CodePage        = <span style=color:#41a1c0>$acp</span>
+</span></span><span style=display:flex><span>                Action          = <span style=color:#d0a8ff>Get-Action</span> <span style=color:#41a1c0>$state</span>.Issue
+</span></span><span style=display:flex><span>            }
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>    <span style=color:#fc6a5d>&#39;Repair&#39;</span>
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$source</span> = <span style=color:#d0a8ff>Resolve-SingleFile</span>
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$state</span> = <span style=color:#d0a8ff>Get-ScriptState</span> <span style=color:#41a1c0>$source</span>
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$state</span>.Issue -eq <span style=color:#fc6a5d>&#39;None&#39;</span>)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#fc5fa3>throw</span> <span style=color:#fc6a5d>&#34;This file has no text-encoding issue, so Repair does not apply. If its signature is not Valid, the file was changed after signing or the signing certificate is not trusted.&#34;</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$state</span>.Issue -eq <span style=color:#fc6a5d>&#39;CodePageTextReadAsUtf8&#39;</span>)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#fc5fa3>throw</span> <span style=color:#fc6a5d>&#34;This file contains code-page text (for example Shift-JIS) that Windows reads as UTF-8. Repair would replace that text with &#39;?&#39; characters. Use -Mode ConvertToUtf8Bom and sign the file again.&#34;</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$state</span>.ReadAs -eq <span style=color:#fc6a5d>&#39;Utf8&#39;</span>)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$codePage</span> = <span style=color:#d0bf69>65001</span>
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$text</span> = [SipScriptRepair.Native]::Decode(<span style=color:#d0bf69>65001</span>, <span style=color:#41a1c0>$false</span>, <span style=color:#41a1c0>$state</span>.Bytes)
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$repaired</span> = (<span style=color:#d0a8ff>New-Object</span> System.Text.UTF8Encoding(<span style=color:#41a1c0>$false</span>, <span style=color:#41a1c0>$true</span>)).GetBytes(<span style=color:#41a1c0>$text</span>)
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>else</span>
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$codePage</span> = <span style=color:#41a1c0>$acp</span>
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$text</span> = [SipScriptRepair.Native]::Decode(<span style=color:#41a1c0>$acp</span>, <span style=color:#41a1c0>$false</span>, <span style=color:#41a1c0>$state</span>.Bytes)
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$repaired</span> = [SipScriptRepair.Native]::EncodeExact(<span style=color:#41a1c0>$acp</span>, <span style=color:#41a1c0>$text</span>)
+</span></span><span style=display:flex><span>            <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$null</span> -eq <span style=color:#41a1c0>$repaired</span>)
+</span></span><span style=display:flex><span>            {
+</span></span><span style=display:flex><span>                <span style=color:#fc5fa3>throw</span> <span style=color:#fc6a5d>&#34;This file cannot be repaired on code page </span><span style=color:#41a1c0>$acp</span><span style=color:#fc6a5d>. Use -Mode ConvertToUtf8Bom and sign the file again.&#34;</span>
+</span></span><span style=display:flex><span>            }
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>if</span> (-not [string]::Equals(<span style=color:#41a1c0>$text</span>, [SipScriptRepair.Native]::Decode(<span style=color:#41a1c0>$codePage</span>, <span style=color:#41a1c0>$true</span>, <span style=color:#41a1c0>$repaired</span>), [StringComparison]::Ordinal) -or
+</span></span><span style=display:flex><span>            (<span style=color:#d0a8ff>Get-ReadEncoding</span> <span style=color:#41a1c0>$repaired</span>) -ne <span style=color:#41a1c0>$state</span>.ReadAs)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#fc5fa3>throw</span> <span style=color:#fc6a5d>&#39;Repair could not produce an identical copy of the signed text. Use -Mode ConvertToUtf8Bom and sign the file again.&#39;</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$target</span> = <span style=color:#d0a8ff>Get-OutputFile</span> <span style=color:#41a1c0>$source</span> <span style=color:#fc6a5d>&#39;.repaired&#39;</span>
+</span></span><span style=display:flex><span>        <span style=color:#d0a8ff>Write-NewFile</span> <span style=color:#41a1c0>$target</span> <span style=color:#41a1c0>$repaired</span>
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$status</span> = (<span style=color:#d0a8ff>Get-AuthenticodeSignature</span> -LiteralPath <span style=color:#41a1c0>$target</span>).Status
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>        [pscustomobject]<span style=color:#41a1c0>@</span>{
+</span></span><span style=display:flex><span>            SourcePath      = <span style=color:#41a1c0>$source</span>
+</span></span><span style=display:flex><span>            RepairedPath    = <span style=color:#41a1c0>$target</span>
+</span></span><span style=display:flex><span>            Issue           = <span style=color:#41a1c0>$state</span>.Issue
+</span></span><span style=display:flex><span>            CodePage        = <span style=color:#41a1c0>$codePage</span>
+</span></span><span style=display:flex><span>            SignatureStatus = <span style=color:#41a1c0>$status</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$status</span> -ne <span style=color:#fc6a5d>&#39;Valid&#39;</span>)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#d0a8ff>Write-Warning</span> <span style=color:#fc6a5d>&#34;The repaired copy&#39;s signature is </span><span style=color:#41a1c0>$status</span><span style=color:#fc6a5d>. The file may have been signed on a machine with a different code page, or changed after signing. Use -Mode ConvertToUtf8Bom and sign it again. Do not deploy the repaired copy.&#34;</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>    <span style=color:#fc6a5d>&#39;ConvertToUtf8Bom&#39;</span>
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$source</span> = <span style=color:#d0a8ff>Resolve-SingleFile</span>
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$state</span> = <span style=color:#d0a8ff>Get-ScriptState</span> <span style=color:#41a1c0>$source</span>
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$PSBoundParameters</span>.ContainsKey(<span style=color:#fc6a5d>&#39;SourceCodePage&#39;</span>))
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$text</span> = [SipScriptRepair.Native]::Decode([uint32] <span style=color:#41a1c0>$SourceCodePage</span>, <span style=color:#41a1c0>$true</span>, <span style=color:#41a1c0>$state</span>.Bytes)
+</span></span><span style=display:flex><span>            <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$null</span> -eq <span style=color:#41a1c0>$text</span>) { <span style=color:#fc5fa3>throw</span> <span style=color:#fc6a5d>&#34;The file is not valid text in code page </span><span style=color:#41a1c0>$SourceCodePage</span><span style=color:#fc6a5d>.&#34;</span> }
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$from</span> = <span style=color:#fc6a5d>&#34;CodePage </span><span style=color:#41a1c0>$SourceCodePage</span><span style=color:#fc6a5d>&#34;</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>elseif</span> (<span style=color:#41a1c0>$state</span>.ReadAs -eq <span style=color:#fc6a5d>&#39;Utf16&#39;</span>)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#fc5fa3>throw</span> <span style=color:#fc6a5d>&#39;This file is UTF-16 and has no text-encoding issue. Conversion is not needed.&#39;</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>elseif</span> (<span style=color:#41a1c0>$state</span>.ValidUtf8)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$text</span> = [SipScriptRepair.Native]::Decode(<span style=color:#d0bf69>65001</span>, <span style=color:#41a1c0>$false</span>, <span style=color:#41a1c0>$state</span>.Bytes)
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$from</span> = <span style=color:#fc6a5d>&#39;UTF-8&#39;</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>elseif</span> (<span style=color:#41a1c0>$state</span>.Issue -eq <span style=color:#fc6a5d>&#39;MalformedUtf8&#39;</span>)
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$text</span> = [SipScriptRepair.Native]::Decode(<span style=color:#d0bf69>65001</span>, <span style=color:#41a1c0>$false</span>, <span style=color:#41a1c0>$state</span>.Bytes)
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$from</span> = <span style=color:#fc6a5d>&#39;UTF-8 (invalid bytes replaced)&#39;</span>
+</span></span><span style=display:flex><span>            <span style=color:#d0a8ff>Write-Warning</span> <span style=color:#fc6a5d>&#34;Invalid bytes were replaced with the &#39;?&#39; replacement character (U+FFFD). Review the converted file before signing.&#34;</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>        <span style=color:#fc5fa3>else</span>
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$text</span> = [SipScriptRepair.Native]::Decode(<span style=color:#41a1c0>$acp</span>, <span style=color:#41a1c0>$true</span>, <span style=color:#41a1c0>$state</span>.Bytes)
+</span></span><span style=display:flex><span>            <span style=color:#fc5fa3>if</span> (<span style=color:#41a1c0>$null</span> -eq <span style=color:#41a1c0>$text</span>) { <span style=color:#fc5fa3>throw</span> <span style=color:#fc6a5d>&#34;Could not detect the file&#39;s encoding. Run again with -SourceCodePage set to the code page the file was written in (for example 932).&#34;</span> }
+</span></span><span style=display:flex><span>            <span style=color:#41a1c0>$from</span> = <span style=color:#fc6a5d>&#34;CodePage </span><span style=color:#41a1c0>$acp</span><span style=color:#fc6a5d>&#34;</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$text</span> = <span style=color:#41a1c0>$text</span>.TrimStart([char] 0xFEFF)
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$text</span> = <span style=color:#d0a8ff>Remove-TerminalSignatureBlock</span> <span style=color:#41a1c0>$text</span>
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$encoding</span> = <span style=color:#d0a8ff>New-Object</span> System.Text.UTF8Encoding(<span style=color:#41a1c0>$true</span>, <span style=color:#41a1c0>$true</span>)
+</span></span><span style=display:flex><span>        <span style=color:#41a1c0>$target</span> = <span style=color:#d0a8ff>Get-OutputFile</span> <span style=color:#41a1c0>$source</span> <span style=color:#fc6a5d>&#39;.utf8bom&#39;</span>
+</span></span><span style=display:flex><span>        <span style=color:#d0a8ff>Write-NewFile</span> <span style=color:#41a1c0>$target</span> (<span style=color:#41a1c0>$encoding</span>.GetPreamble() + <span style=color:#41a1c0>$encoding</span>.GetBytes(<span style=color:#41a1c0>$text</span>))
+</span></span><span style=display:flex><span> 
+</span></span><span style=display:flex><span>        [pscustomobject]<span style=color:#41a1c0>@</span>{
+</span></span><span style=display:flex><span>            SourcePath = <span style=color:#41a1c0>$source</span>
+</span></span><span style=display:flex><span>            OutputPath = <span style=color:#41a1c0>$target</span>
+</span></span><span style=display:flex><span>            ReadFrom   = <span style=color:#41a1c0>$from</span>
+</span></span><span style=display:flex><span>            NextStep   = <span style=color:#fc6a5d>&#34;Review the file, then sign it: Set-AuthenticodeSignature -FilePath &#39;</span><span style=color:#41a1c0>$target</span><span style=color:#fc6a5d>&#39; -Certificate &lt;cert&gt;&#34;</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div></div></article></main><footer><p>&copy; 2026 <a href=../../ class=back-link>⎡nd3x</a></p></footer></div></body></html>
